@@ -1,0 +1,260 @@
+---
+title: "'did' estimation with simulated datasets"
+author: "Kyohei Sato"
+date: "2024-07-01"
+output: 
+  html_document:
+    toc: true
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(magrittr)
+library(gtsummary)
+library(kableExtra)
+library(here)
+library(did)
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r functions}
+set.seed(1111)
+
+create_dat_sample <- function(N) {
+  ids <- 1:N
+  sample_data <- expand.grid(ID = ids, period = 0:3) %>%
+    mutate(outcome = rnorm(N * 4))
+  return(sample_data)
+}
+
+add_treat_variable <- function(data) {
+  treat_period <- data %>%
+    group_by(ID) %>%
+    summarise(treat_start = sample(0:3, 1)) %>%
+    mutate(treat_start = ifelse(row_number() <= 4, row_number() - 1, treat_start)) 
+  data <- data %>%
+    left_join(treat_period, by = "ID") %>%
+    group_by(ID) %>%
+    mutate(treat = ifelse(period >= treat_start, 1, 0),
+           outcome = ifelse(period >= treat_start, rnorm(n(), mean = 1, sd = 1), outcome)) %>%
+    ungroup() %>%
+    select(-treat_start)
+  return(data)
+}
+
+add_na_outcome_units_ft0 <- function(data, num_units_to_add) {
+  max_id <- max(data$ID)
+  new_ids <- (max_id + 1):(max_id + num_units_to_add)
+  new_units <- expand.grid(ID = new_ids, period = 0:3) %>%
+    mutate(outcome = NA)
+  new_units <- new_units %>%
+    mutate(treat = ifelse(period >= 0, 1, 0))
+  full_data <- bind_rows(data, new_units)
+  return(full_data)
+}
+
+add_na_outcome_units_ft1 <- function(data, num_units_to_add) {
+  max_id <- max(data$ID)
+  new_ids <- (max_id + 1):(max_id + num_units_to_add)
+  new_units <- expand.grid(ID = new_ids, period = 0:3) %>%
+    mutate(outcome = NA)
+  new_units <- new_units %>%
+    mutate(treat = ifelse(period >= 1, 1, 0))
+  full_data <- bind_rows(data, new_units)
+  return(full_data)
+}
+
+add_na_outcome_units_ft2 <- function(data, num_units_to_add) {
+  max_id <- max(data$ID)
+  new_ids <- (max_id + 1):(max_id + num_units_to_add)
+  new_units <- expand.grid(ID = new_ids, period = 0:3) %>%
+    mutate(outcome = NA)
+  new_units <- new_units %>%
+    mutate(treat = ifelse(period >= 2, 1, 0))
+  full_data <- bind_rows(data, new_units)
+  return(full_data)
+}
+
+add_na_outcome_units_ft3 <- function(data, num_units_to_add) {
+  max_id <- max(data$ID)
+  new_ids <- (max_id + 1):(max_id + num_units_to_add)
+  new_units <- expand.grid(ID = new_ids, period = 0:3) %>%
+    mutate(outcome = NA)
+  new_units <- new_units %>%
+    mutate(treat = ifelse(period >= 3, 1, 0))
+  full_data <- bind_rows(data, new_units)
+  return(full_data)
+}
+
+```
+
+## Create Sample Data
+We are going to create sample data which consists of 4 periods, binary treatment variables. Units are defined by their ID number from 1 to 1000 (base data). Henceforth the number of observations is 4000 in the baseline data. "Outcome" are drawn from mean 0 standard distribution before the treatment while mean 1 standard distribution after the treatment. Thus the ATT should be 1. To the baseline data, we add units whose outcome is NA. For example in df2, we have 20 such units. Similarly, we have 30 in df3 and 40 in df4. Finally, “ft0” means units whose outcome is NA are first treated at period 0. “df3_ft2” contains 30 units whose outcome is NA and treated in period = 2.
+
+```{r sample data}
+df_base <-
+  create_dat_sample(1000)
+
+df_base <-
+  add_treat_variable(df_base)
+
+df_base_did <- 
+  df_base %>%
+    group_by(ID) %>%
+    mutate(first.treat = first(period[treat==1], na_rm = T)) %>%
+  mutate(first.treat = replace_na(first.treat, 0))
+
+df2_ft0 <- add_na_outcome_units_ft0(df_base, 20)
+
+df2_did_ft0 <- 
+  df2_ft0 %>%
+    group_by(ID) %>%
+    mutate(first.treat = first(period[treat==1], na_rm = T)) %>%
+  mutate(first.treat = replace_na(first.treat, 0))
+
+df2_ft1 <- add_na_outcome_units_ft1(df_base, 20)
+
+df2_did_ft1 <- 
+  df2_ft1 %>%
+    group_by(ID) %>%
+    mutate(first.treat = first(period[treat==1], na_rm = T)) %>%
+  mutate(first.treat = replace_na(first.treat, 0))
+
+df2_ft2 <- add_na_outcome_units_ft2(df_base, 20)
+
+df2_did_ft2 <- 
+  df2_ft2 %>%
+    group_by(ID) %>%
+    mutate(first.treat = first(period[treat==1], na_rm = T)) %>%
+  mutate(first.treat = replace_na(first.treat, 0))
+
+df3_ft0 <- add_na_outcome_units_ft0(df_base, 30)
+
+df3_did_ft0 <- 
+  df3_ft0 %>%
+    group_by(ID) %>%
+    mutate(first.treat = first(period[treat==1], na_rm = T)) %>%
+  mutate(first.treat = replace_na(first.treat, 0))
+
+df3_ft1 <- add_na_outcome_units_ft1(df_base, 30)
+
+df3_did_ft1 <- 
+  df3_ft1 %>%
+    group_by(ID) %>%
+    mutate(first.treat = first(period[treat==1], na_rm = T)) %>%
+  mutate(first.treat = replace_na(first.treat, 0))
+
+df3_ft2 <- add_na_outcome_units_ft2(df_base, 30)
+
+df3_did_ft2 <- 
+  df3_ft2 %>%
+    group_by(ID) %>%
+    mutate(first.treat = first(period[treat==1], na_rm = T)) %>%
+  mutate(first.treat = replace_na(first.treat, 0))
+
+df4_ft0 <- add_na_outcome_units_ft0(df_base, 40)
+
+df4_did_ft0 <- 
+  df4_ft0 %>%
+    group_by(ID) %>%
+    mutate(first.treat = first(period[treat==1], na_rm = T)) %>%
+  mutate(first.treat = replace_na(first.treat, 0))
+
+df4_ft1 <- add_na_outcome_units_ft1(df_base, 40)
+
+df4_did_ft1 <- 
+  df4_ft1 %>%
+    group_by(ID) %>%
+    mutate(first.treat = first(period[treat==1], na_rm = T)) %>%
+  mutate(first.treat = replace_na(first.treat, 0))
+
+df4_ft2 <- add_na_outcome_units_ft2(df_base, 40)
+
+df4_did_ft2 <- 
+  df4_ft2 %>%
+    group_by(ID) %>%
+    mutate(first.treat = first(period[treat==1], na_rm = T)) %>%
+  mutate(first.treat = replace_na(first.treat, 0))
+
+datasets <- list(
+  df_base_did,
+  df2_did_ft0,
+  df2_did_ft1,
+  df2_did_ft2,
+  df3_did_ft0,
+  df3_did_ft1,
+  df3_did_ft2,
+  df4_did_ft0,
+  df4_did_ft1,
+  df4_did_ft2
+)
+
+section_titles <- c(
+  "df_base_did",
+  "df2_did_ft0",
+  "df2_did_ft1",
+  "df2_did_ft2",
+  "df3_did_ft0",
+  "df3_did_ft1",
+  "df3_did_ft2",
+  "df4_did_ft0",
+  "df4_did_ft1",
+  "df4_did_ft2"
+  )
+```
+
+## CS results (Balanced Panel) {.tabset}
+
+Here are the results using "att_gt()" and "agg_te()"
+We can see that the "estimate" are consistent regardless of the number of units whose outcome is NA. However, "std.error",	"conf.low",	"conf.high", "point.conf.low" and "point.conf.high" are different across data sets.
+
+### "did" GT {.tabset}
+Estimating Group-Time Average Treatment Effects.
+
+```{r CS, warning=FALSE, message=FALSE, results='asis'}
+
+list_results <- map(datasets, ~att_gt(
+    yname = "outcome",
+    gname = "first.treat",
+    idname = "ID",
+    tname = "period",
+    control_group = "notyettreated",
+    xformla = ~1,
+    data = .x,
+    est_method = "reg",
+    base_period = "universal"
+  ))
+
+
+## output
+walk2(list_results, section_titles, function(result, title) {
+  cat("####", title, "\n")
+  result_summary <- tidy(result)
+  cat(knitr::kable(result_summary, digits = 3, format = "html") %>% kable_styling())
+  cat("\n\n")
+})
+
+```
+
+### "did" Aggregate {.tabset}
+Aggregated Group-Time Average Treatment Effects.
+
+```{r CS aggregate, warning=FALSE, message=FALSE, results='asis'}
+
+list_aggresults <- map(list_results, function(result) {
+  aggte(result, type = "dynamic", na.rm = TRUE)
+})
+
+## output
+walk2(list_aggresults, section_titles, function(result, title) {
+  cat("####", title, "\n")
+  result_summary <- tidy(result)
+  cat(knitr::kable(result_summary, digits = 3, format = "html") %>% kable_styling())
+  cat("\n\n")
+})
+
+```
